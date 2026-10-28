@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>面试复盘助手</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/app.css?v=20261026b" />
+  <script defer src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script defer src="/static/js/app.js?v=20261026b"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div class="brand-text">
+          <h1>面试复盘助手</h1>
+          <p>本地会话 · 一次生成可回看</p>
+        </div>
+      </div>
+
+      <button type="button" class="btn-primary btn-block" id="btn-new">
+        新建复盘
+      </button>
+
+      <div class="sidebar-label">历史会话</div>
+      <div class="session-list" id="session-list" role="list"></div>
+
+      <footer class="sidebar-foot">
+        <p>不脱敏 · 请注意隐私</p>
+        <p class="muted">数据保存在本机 data/sessions</p>
+      </footer>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button type="button" class="btn-ghost mobile-only" id="btn-toggle-sidebar" aria-label="打开菜单">菜单</button>
+        <div class="topbar-title" id="topbar-title">开始一次新的面试复盘</div>
+        <div class="topbar-actions" id="topbar-actions"></div>
+      </header>
+
+      <section class="workspace" id="workspace">
+        <!-- 视图由 JS 注入 -->
+      </section>
+    </main>
+  </div>
+
+  <div class="toast-host" id="toast-host" aria-live="polite"></div>
+</body>
+</html>
