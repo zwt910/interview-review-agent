@@ -211,20 +211,138 @@
     list.innerHTML = state.sessions
       .map((s) => {
         const active = s.session_id === state.activeId ? "active" : "";
+        const sid = escapeHtml(s.session_id);
+        const title = escapeHtml(s.title || s.session_id);
         return `
-          <button type="button" class="session-item ${active}" data-id="${escapeHtml(s.session_id)}" role="listitem">
-            <div class="t">${escapeHtml(s.title || s.session_id)}</div>
-            <div class="m">
-              <span>${escapeHtml(statusLabel(s.status))}</span>
-              <span>${s.qa_count || 0} 题</span>
-              <span>${escapeHtml(formatTime(s.updated_at))}</span>
+          <div class="session-item ${active}" data-id="${sid}" role="listitem">
+            <button type="button" class="session-item-main" data-id="${sid}" title="${title}">
+              <div class="t">${title}</div>
+              <div class="m">
+                <span>${escapeHtml(statusLabel(s.status))}</span>
+                <span>${s.qa_count || 0} 题</span>
+                <span>${escapeHtml(formatTime(s.updated_at))}</span>
+              </div>
+            </button>
+            <div class="session-item-actions">
+              <button type="button" class="session-act session-act-rename" data-id="${sid}" title="重命名" aria-label="重命名">
+                <span class="session-act-r" aria-hidden="true">R</span>
+              </button>
+              <button type="button" class="session-act session-act-delete" data-id="${sid}" title="删除" aria-label="删除">
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 6h18"/>
+                  <path d="M8 6V4h8v2"/>
+                  <path d="M19 6l-1 14H6L5 6"/>
+                  <path d="M10 11v6"/>
+                  <path d="M14 11v6"/>
+                </svg>
+              </button>
             </div>
-          </button>`;
+          </div>`;
       })
       .join("");
-    list.querySelectorAll(".session-item").forEach((btn) => {
+    list.querySelectorAll(".session-item-main").forEach((btn) => {
       btn.addEventListener("click", () => openSession(btn.dataset.id));
     });
+    list.querySelectorAll(".session-act-rename").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        const meta = state.sessions.find((x) => x.session_id === id);
+        renameSession(id, meta?.title || "");
+      });
+    });
+    list.querySelectorAll(".session-act-delete").forEach((btn) => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        deleteSession(btn.dataset.id);
+      });
+    });
+  }
+
+  function stopWatchProgress() {
+    if (state.watchTimer) {
+      clearInterval(state.watchTimer);
+      state.watchTimer = null;
+    }
+    state.watchSessionId = null;
+    state.watchFingerprint = null;
+  }
+
+  function sessionWatchFingerprint(detail) {
+    const m = detail?.meta || {};
+    const n = (detail?.analyses || []).length;
+    return `${m.status}|${m.workflow_step}|${n}|${m.updated_at || ""}`;
+  }
+
+  function paintSessionDetail(id, detail) {
+    state.detail = detail;
+    const step = detail.meta?.workflow_step || "";
+    const st = detail.meta?.status || "";
+    if (
+      st === "awaiting_transcript" ||
+      (step === "transcript" && detail.cleaned_transcript)
+    ) {
+      renderWizardStep("transcript", {
+        session_id: id,
+        cleaned_transcript: detail.cleaned_transcript,
+        message: "请核对转写文稿，可编辑后点击下一步",
+      });
+    } else if (
+      st === "awaiting_questions" ||
+      (step === "questions" && detail.clarified_questions)
+    ) {
+      renderWizardStep("questions", {
+        session_id: id,
+        clarified_questions: detail.clarified_questions,
+        message: "请核对澄清后的问题列表，可编辑后点击下一步",
+      });
+    } else if (st === "awaiting_qa" || (step === "qa" && detail.interview_qa_md)) {
+      renderWizardStep("qa", {
+        session_id: id,
+        interview_qa_md: detail.interview_qa_md,
+        message: "请核对问答对，可编辑后开始逐题分析",
+      });
+    } else {
+      renderResultView();
+    }
+  }
+
+  function startWatchProgress(sessionId) {
+    /** 外部脚本驱动流程时：打开会话后轮询，刷新向导/分析进度。 */
+    if (!sessionId) return;
+    if (state.watchSessionId === sessionId && state.watchTimer) return;
+    stopWatchProgress();
+    state.watchSessionId = sessionId;
+    state.watchTimer = setInterval(async () => {
+      if (state.activeId !== sessionId) {
+        stopWatchProgress();
+        return;
+      }
+      if (state.live && !state.live.done) return;
+      try {
+        const detail = await api(`/sessions/${encodeURIComponent(sessionId)}`);
+        const fp = sessionWatchFingerprint(detail);
+        const st = detail.meta?.status || "";
+        await loadSessions();
+        if (fp !== state.watchFingerprint) {
+          state.watchFingerprint = fp;
+          state.live = null;
+          paintSessionDetail(sessionId, detail);
+        }
+        const inFlight =
+          st === "awaiting_transcript" ||
+          st === "awaiting_questions" ||
+          st === "awaiting_qa" ||
+          st === "analyzing" ||
+          st === "running" ||
+          st === "paused";
+        if (!inFlight) stopWatchProgress();
+      } catch (e) {
+        console.warn("watch progress failed", e);
+      }
+    }, 2000);
   }
 
   async function openSession(id) {
@@ -237,37 +355,18 @@
       renderSessionList();
       els.workspace.innerHTML = `<div class="panel empty-state">加载中…</div>`;
       const detail = await api(`/sessions/${encodeURIComponent(id)}`);
-      state.detail = detail;
-      const step = detail.meta?.workflow_step || "";
+      state.watchFingerprint = sessionWatchFingerprint(detail);
+      paintSessionDetail(id, detail);
       const st = detail.meta?.status || "";
-      // 未完成的解析向导：回到对应确认页
-      if (
+      const inFlight =
         st === "awaiting_transcript" ||
-        (step === "transcript" && detail.cleaned_transcript)
-      ) {
-        renderWizardStep("transcript", {
-          session_id: id,
-          cleaned_transcript: detail.cleaned_transcript,
-          message: "请核对转写文稿，可编辑后点击下一步",
-        });
-      } else if (
         st === "awaiting_questions" ||
-        (step === "questions" && detail.clarified_questions)
-      ) {
-        renderWizardStep("questions", {
-          session_id: id,
-          clarified_questions: detail.clarified_questions,
-          message: "请核对澄清后的问题列表，可编辑后点击下一步",
-        });
-      } else if (st === "awaiting_qa" || (step === "qa" && detail.interview_qa_md)) {
-        renderWizardStep("qa", {
-          session_id: id,
-          interview_qa_md: detail.interview_qa_md,
-          message: "请核对问答对，可编辑后开始逐题分析",
-        });
-      } else {
-        renderResultView();
-      }
+        st === "awaiting_qa" ||
+        st === "analyzing" ||
+        st === "running" ||
+        st === "paused";
+      if (inFlight) startWatchProgress(id);
+      else stopWatchProgress();
       closeSidebarOnMobile();
     } catch (e) {
       toast(e.message || "加载失败", "error");
@@ -795,10 +894,14 @@
     return true;
   }
 
-  async function renameActive() {
-    const id = state.activeId || state.live?.sessionId;
+  async function renameSession(id, currentTitle) {
     if (!id) return;
-    const cur = getViewModel()?.title || "";
+    const cur =
+      (currentTitle != null && String(currentTitle)) ||
+      (id === state.activeId || id === state.live?.sessionId
+        ? getViewModel()?.title || ""
+        : "") ||
+      "";
     const title = prompt("输入新的会话标题", cur);
     if (!title || !title.trim()) return;
     try {
@@ -809,8 +912,8 @@
       });
       toast("已重命名", "ok");
       await loadSessions();
-      if (state.detail) await openSession(id);
-      else if (state.live) {
+      if (state.detail?.meta?.session_id === id) await openSession(id);
+      else if (state.live?.sessionId === id) {
         state.live.title = title.trim();
         renderResultView();
       }
@@ -819,21 +922,37 @@
     }
   }
 
-  async function deleteActive() {
-    const id = state.activeId || state.live?.sessionId;
+  async function deleteSession(id) {
     if (!id) return;
     if (!confirm("确定删除该会话？本地文件将一并删除。")) return;
     try {
       await api(`/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
       toast("已删除", "ok");
-      state.activeId = null;
-      state.detail = null;
-      state.live = null;
-      await loadSessions();
-      showNewView();
+      const wasActive =
+        state.activeId === id || state.live?.sessionId === id || state.detail?.meta?.session_id === id;
+      if (wasActive) {
+        state.activeId = null;
+        state.detail = null;
+        state.live = null;
+        stopWatchProgress();
+        await loadSessions();
+        showNewView();
+      } else {
+        await loadSessions();
+      }
     } catch (e) {
       toast(e.message, "error");
     }
+  }
+
+  async function renameActive() {
+    const id = state.activeId || state.live?.sessionId;
+    await renameSession(id, getViewModel()?.title || "");
+  }
+
+  async function deleteActive() {
+    const id = state.activeId || state.live?.sessionId;
+    await deleteSession(id);
   }
 
   // ---------- new / wizard + SSE analyze ----------
@@ -874,7 +993,7 @@
 
         <div class="field-block resume-notes-block" id="resume-notes-block">
           <label for="resume-notes">简历注释（可选）</label>
-          <div class="hint">写在简历上传下方。补充项目背景、指标口径、文稿里没说清的经历等，帮助 AI 更懂你；不填不影响原流程。开始解析后会自动存入下方历史，下次可一键回填。</div>
+          <div class="hint">写在简历上传下方。补充项目背景、指标口径、文稿里没说清的经历等，帮助 AI 更懂你；不填不影响原流程。开始解析后若与历史不完全相同则存入下方（最多近 10 条），下次可一键回填。</div>
           <textarea id="resume-notes" rows="4" placeholder="例如：某某项目里我负责的评测指标实际是…；离职原因文稿里没写全…"></textarea>
           <div class="notes-history" id="notes-history">
             <div class="notes-history-head">历史注释</div>
@@ -980,7 +1099,7 @@
     const listEl = document.getElementById("notes-history-list");
     if (!listEl) return;
     try {
-      const data = await api("/resume-notes/history?limit=30");
+      const data = await api("/resume-notes/history?limit=10");
       const items = data.items || [];
       if (!items.length) {
         listEl.innerHTML = `<div class="notes-history-empty">暂无历史。填写注释并开始解析后会自动保存在这里。</div>`;
@@ -1447,12 +1566,91 @@
     els.sidebar.classList.toggle("open");
   });
 
+  const E2E_DEFAULT = {
+    position: "AI产品经理",
+    title: "默认测试1",
+    resumeNotes:
+      "度小满的AI客服项目，我参与了整个产品的框架构建（用户识别层-业务执行层-服务保障层）工作，同时在迭代阶段，通过badcase的发现，推动了几个子模块的上线（如：安全模块，从输入输出两端进行检测，无违规信息才放行，有违规则改为兜底话术；首次进行判断模块：再次进线距离上次进线时间太长或太短，直接走固定规则新开会话或延续之前会话，如果处于中间态，则采用模型语义判断的方式；转人工监管模型：独立的审查此时的对话是否应该转人工的模块，与主对话模型一起判断，提高应转问题的召回率）。\n" +
+      "新开普AI生成教学动画的项目调研环节的竞品有oiioii、可灵、即梦。调研的目的是确定视频生成产品从输入到输出的功能流程。最终模仿了oiioii较为细致的工作流，同时做出了针对教学场景的改造，如添加了“预对话”步骤收集参数（如学生年级、知识学科）用于辅助模型锁定知识点范围，减少错误风险。",
+    dialogueUrl: "/static/e2e_fixtures/dialogue.docx",
+    dialogueName: "懂车帝二面.docx",
+    resumeUrl: "/static/e2e_fixtures/resume.docx",
+    resumeName: "测试简历.docx",
+  };
+
+  async function assignFileInput(inputEl, nameEl, url, filename) {
+    const res = await fetch(url);
+    if (!res.ok) {
+      throw new Error(`无法加载测试文件 ${url}（HTTP ${res.status}）`);
+    }
+    const blob = await res.blob();
+    const file = new File([blob], filename, {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    inputEl.files = dt.files;
+    if (nameEl) nameEl.textContent = filename;
+    inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  async function runDefaultE2EAutofill() {
+    /** 测试脚本打开 ?e2e=default 时：填表并点「开始解析」，之后交给用户。 */
+    showNewView();
+    await new Promise((r) => setTimeout(r, 80));
+
+    const positionEl = document.getElementById("session-position");
+    const titleEl = document.getElementById("session-title");
+    const notesEl = document.getElementById("resume-notes");
+    const jdEl = document.getElementById("job-description");
+    const dialogueInput = document.getElementById("file-dialogue");
+    const resumeInput = document.getElementById("file-resume");
+    const submitBtn = document.getElementById("btn-submit");
+
+    if (!positionEl || !dialogueInput || !submitBtn) {
+      throw new Error("新建页表单未就绪");
+    }
+
+    positionEl.value = E2E_DEFAULT.position;
+    if (titleEl) titleEl.value = E2E_DEFAULT.title;
+    if (notesEl) notesEl.value = E2E_DEFAULT.resumeNotes;
+    if (jdEl) jdEl.value = "";
+
+    await assignFileInput(
+      dialogueInput,
+      document.getElementById("name-dialogue"),
+      E2E_DEFAULT.dialogueUrl,
+      E2E_DEFAULT.dialogueName
+    );
+    await assignFileInput(
+      resumeInput,
+      document.getElementById("name-resume"),
+      E2E_DEFAULT.resumeUrl,
+      E2E_DEFAULT.resumeName
+    );
+
+    // 去掉 e2e 参数，避免刷新重复提交；保留页面给用户继续操作
+    history.replaceState({}, "", "/");
+    toast("测试脚本已自动填表，正在点击「开始解析」…", "ok");
+    submitBtn.click();
+  }
+
   async function boot() {
     showNewView();
     try {
       await loadSessions();
+      const params = new URLSearchParams(location.search);
+      const sid = params.get("session");
+      const e2e = params.get("e2e");
+      if (e2e === "default") {
+        await runDefaultE2EAutofill();
+        return;
+      }
+      if (sid) {
+        await openSession(sid);
+      }
     } catch (e) {
-      toast("无法连接本地服务，请先启动后端", "error");
+      toast(e.message || "无法连接本地服务，请先启动后端", "error");
       console.error(e);
     }
   }

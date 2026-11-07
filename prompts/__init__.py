@@ -17,8 +17,15 @@ PROMPT_FILES = {
     "dialogue_transcribe": "dialogue_transcribe.txt",
     "dialogue_clarify_questions": "dialogue_clarify_questions.txt",
     "dialogue_build_qa": "dialogue_build_qa.txt",
-    "qa_analysis": "qa_analysis.txt",
-    "qa_analysis_with_jd": "qa_analysis_with_jd.txt",
+    # 会话级语义压缩（分析前一次，多题复用）
+    "context_compress_resume": "context_compress_resume.txt",
+    "context_compress_jd": "context_compress_jd.txt",
+    "context_compress_notes": "context_compress_notes.txt",
+    # 逐题分析两步串行（考察点 → 不妥之处+改进回答）
+    "qa_assessment": "qa_assessment.txt",
+    "qa_assessment_with_jd": "qa_assessment_with_jd.txt",
+    "qa_critique_improve": "qa_critique_improve.txt",
+    "qa_critique_improve_with_jd": "qa_critique_improve_with_jd.txt",
     "qa_revise": "qa_revise.txt",
 }
 

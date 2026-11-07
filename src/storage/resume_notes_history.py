@@ -2,7 +2,7 @@
 简历注释历史（跨会话复用）。
 
 落盘：data/resume_notes_history.json
-相同正文再次提交时置顶，不重复存多份。
+保存前与已有正文做匹配：完全一致则跳过不写；最多保留近 10 条不同注释。
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from src.utils.resume_notes import normalize_resume_notes
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MAX_ITEMS = 30
+DEFAULT_MAX_ITEMS = 10
 
 
 class ResumeNotesHistoryStore:
@@ -56,7 +56,14 @@ class ResumeNotesHistoryStore:
                     "preview": str(x.get("preview") or self._preview(text)),
                 }
             )
-        return items
+        # 兼容旧数据：去重并裁剪到上限（列表前部为较新）
+        cleaned = self._dedupe_keep_order(items)[: self.max_items]
+        if cleaned != items:
+            try:
+                self._write(cleaned)
+            except OSError as e:
+                logger.warning("裁剪简历注释历史落盘失败: %s", e)
+        return cleaned
 
     def _write(self, items: list[dict[str, Any]]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -72,34 +79,48 @@ class ResumeNotesHistoryStore:
             return one
         return one[: limit - 1] + "…"
 
-    def list_items(self, *, limit: int = 50) -> list[dict[str, Any]]:
+    @staticmethod
+    def _dedupe_keep_order(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        seen: set[str] = set()
+        out: list[dict[str, Any]] = []
+        for x in items:
+            text = str(x.get("text") or "")
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            out.append(x)
+        return out
+
+    def list_items(self, *, limit: int = 10) -> list[dict[str, Any]]:
         items = self._read()
-        lim = max(1, min(int(limit), 200))
+        lim = max(1, min(int(limit), self.max_items))
         return items[:lim]
 
     def add(self, text: str) -> Optional[dict[str, Any]]:
-        """写入一条历史；空文本忽略。相同正文则更新时间并置顶。"""
+        """写入一条历史；空文本忽略。
+
+        若与已有任一条正文完全一致（normalize 后），则不保存、不改动列表。
+        新内容插入队首，超出 max_items 时丢掉最旧的。
+        """
         content = normalize_resume_notes(text)
         if not content:
             return None
-        now = datetime.now().isoformat(timespec="seconds")
         items = self._read()
-        existing = next((x for x in items if x.get("text") == content), None)
-        if existing:
-            items = [x for x in items if x.get("id") != existing["id"]]
-            entry = {
-                "id": existing["id"],
-                "text": content,
-                "saved_at": now,
-                "preview": self._preview(content),
-            }
-        else:
-            entry = {
-                "id": uuid.uuid4().hex[:10],
-                "text": content,
-                "saved_at": now,
-                "preview": self._preview(content),
-            }
+        if any(x.get("text") == content for x in items):
+            logger.info(
+                "简历注释历史跳过重复保存 chars=%s total=%s",
+                len(content),
+                len(items),
+            )
+            return None
+
+        now = datetime.now().isoformat(timespec="seconds")
+        entry = {
+            "id": uuid.uuid4().hex[:10],
+            "text": content,
+            "saved_at": now,
+            "preview": self._preview(content),
+        }
         items.insert(0, entry)
         items = items[: self.max_items]
         self._write(items)

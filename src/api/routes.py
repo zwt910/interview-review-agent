@@ -19,6 +19,7 @@ from src.pipeline.analysis_control import get_controller
 from src.pipeline.events import event_to_sse
 from src.pipeline.review_pipeline import InterviewReviewPipeline
 from src.pipeline.wizard import ParseWizard
+from src.services.context_compress import load_or_build_analysis_context
 from src.services.qa_analyzer import revise_one
 from src.services.report_generator import generate_review_markdown
 from src.storage.resume_notes_history import get_resume_notes_history_store
@@ -73,8 +74,8 @@ class ReviseBody(BaseModel):
 
 
 @router.get("/resume-notes/history")
-async def list_resume_notes_history(limit: int = 30):
-    """简历注释历史列表（供首页一键回填）。"""
+async def list_resume_notes_history(limit: int = 10):
+    """简历注释历史列表（供首页一键回填；最多近 10 条不同注释）。"""
     store = get_resume_notes_history_store()
     items = store.list_items(limit=limit)
     return {"total": len(items), "items": items}
@@ -163,14 +164,23 @@ async def revise_analysis(session_id: str, qa_id: str, body: ReviseBody):
         len(feedback),
     )
     try:
+        ctx = load_or_build_analysis_context(
+            store,
+            session_id,
+            resume_summary=detail.resume_summary,
+            job_description=detail.job_description or "",
+            resume_notes=detail.resume_notes or "",
+            position=detail.meta.position or "待确认",
+        )
         draft = await revise_one(
             qa,
             base_analysis=base,
             user_feedback=feedback,
             resume_summary=detail.resume_summary,
+            resume_summary_json=ctx.resume_json,
             position=detail.meta.position or "待确认",
-            job_description=detail.job_description or "",
-            resume_notes=detail.resume_notes or "",
+            job_description=ctx.job_description,
+            resume_notes=ctx.resume_notes,
         )
         saved = store.append_analysis_version(
             session_id,

@@ -20,6 +20,10 @@ output/
 data/sessions/
 data/resume_notes_history.json
 logs/
+web/e2e_fixtures/
+
+# 本地测试脚本（不入库）
+scripts/
 *.log
 .pytest_cache/
 .mypy_cache/

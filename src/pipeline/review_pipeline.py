@@ -36,7 +36,8 @@ from src.services.dialogue_organize import organize_dialogue
 from src.services.qa_analyzer import _analyze_one
 from src.services.qa_splitter import split_qa_markdown
 from src.services.report_generator import generate_review_markdown
-from src.services.resume_summary import resume_summary_to_json_str, summarize_resume
+from src.services.context_compress import load_or_build_analysis_context
+from src.services.resume_summary import summarize_resume
 from src.storage.resume_notes_history import get_resume_notes_history_store
 from src.storage.session_store import SessionStore, get_session_store
 from src.utils.request_context import set_session_id, with_ctx
@@ -192,12 +193,16 @@ class InterviewReviewPipeline:
                 self.store.update_meta_fields(session_id, qa_count=len(qa_items))
 
             # ---- 3/4 逐题分析（完成一题推一题）----
+            yield ProgressEvent(step=3, label="正在压缩分析上下文", session_id=session_id)
+            ctx = load_or_build_analysis_context(
+                self.store,
+                session_id,
+                resume_summary=resume_summary,
+                job_description=jd_text,
+                resume_notes=notes,
+                position=position,
+            )
             yield ProgressEvent(step=3, label="正在逐题分析", session_id=session_id)
-
-            if resume_summary is None:
-                resume_json = '{"提示": "无简历参照，改进回答受限"}'
-            else:
-                resume_json = resume_summary_to_json_str(resume_summary)
 
             llm = get_llm_client_for("analysis")
             semaphore = asyncio.Semaphore(self.settings.qa_analysis_concurrency)
@@ -211,10 +216,10 @@ class InterviewReviewPipeline:
                 nonlocal completed
                 analysis = await _analyze_one(
                     qa,
-                    resume_summary_json=resume_json,
+                    resume_summary_json=ctx.resume_json,
                     position=position,
-                    job_description=jd_text,
-                    resume_notes=notes,
+                    job_description=ctx.job_description,
+                    resume_notes=ctx.resume_notes,
                     client=llm,
                     semaphore=semaphore,
                 )
@@ -362,6 +367,15 @@ class InterviewReviewPipeline:
                 title=meta.title,
                 position=position,
             )
+            yield ProgressEvent(step=3, label="正在压缩分析上下文", session_id=session_id)
+            ctx = load_or_build_analysis_context(
+                self.store,
+                session_id,
+                resume_summary=resume_summary,
+                job_description=jd_text,
+                resume_notes=notes,
+                position=position,
+            )
             yield ProgressEvent(step=3, label="正在逐题分析", session_id=session_id)
 
             qa_items = split_qa_markdown(qa_md)
@@ -371,11 +385,6 @@ class InterviewReviewPipeline:
                 session_id, "qa_items.json", [q.model_dump() for q in qa_items]
             )
             self.store.update_meta_fields(session_id, qa_count=len(qa_items))
-
-            if resume_summary is None:
-                resume_json = '{"提示": "无简历参照，改进回答受限"}'
-            else:
-                resume_json = resume_summary_to_json_str(resume_summary)
 
             llm = get_llm_client_for("analysis")
             conc = max(1, int(self.settings.qa_analysis_concurrency))
@@ -460,10 +469,10 @@ class InterviewReviewPipeline:
                         )
                         analysis = await _analyze_one(
                             qa,
-                            resume_summary_json=resume_json,
+                            resume_summary_json=ctx.resume_json,
                             position=position,
-                            job_description=jd_text,
-                            resume_notes=notes,
+                            job_description=ctx.job_description,
+                            resume_notes=ctx.resume_notes,
                             client=llm,
                             semaphore=slot_sem,
                         )

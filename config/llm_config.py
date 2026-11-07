@@ -108,11 +108,18 @@ class LLMConfigDialogue(_LLMBase):
 
 
 class LLMConfigAnalysis(_LLMBase):
-    """FR5 逐题分析。"""
+    """FR5 逐题分析。
+
+    默认 max_tokens 下调；可按步覆盖：
+    - step1：仅考察点
+    - step2：不妥之处 + 改进回答（合并输出）
+    """
 
     model: str = Field(default="deepseek-v4-pro", validation_alias="LLM_ANALYSIS_MODEL")
     temperature: float = Field(default=0.2, validation_alias="LLM_ANALYSIS_TEMPERATURE")
-    max_tokens: int = Field(default=15000, validation_alias="LLM_ANALYSIS_MAX_TOKENS")
+    max_tokens: int = Field(default=4096, validation_alias="LLM_ANALYSIS_MAX_TOKENS")
+    step1_max_tokens: int = Field(default=1024, validation_alias="LLM_ANALYSIS_STEP1_MAX_TOKENS")
+    step2_max_tokens: int = Field(default=4096, validation_alias="LLM_ANALYSIS_STEP2_MAX_TOKENS")
     thinking_enabled: bool = Field(default=False, validation_alias="LLM_ANALYSIS_THINKING")
 
 

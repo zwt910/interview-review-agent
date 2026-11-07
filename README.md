@@ -77,7 +77,7 @@ python main.py --show <session_id>
 | FR2 | `services/resume_summary.py` + `prompts/resume_summary.txt` | 简历 JSON 摘要 |
 | FR3 | `services/dialogue_organize.py` + `prompts/dialogue_organize.txt` | → `interview_qa.md` |
 | FR4 | `services/qa_splitter.py` | 切分为 QAItem |
-| FR5 | `services/qa_analyzer.py` + `prompts/qa_analysis.txt` | 并发逐题四段分析 |
+| FR5 | `services/qa_analyzer.py` + `context_compress.py` + `qa_assessment*` / `qa_critique_improve*` | 会话级语义压缩上下文后，逐题两步串行分析 |
 | FR6 | `services/report_generator.py` | → `interview_review.md` |
 
 ## 配置说明

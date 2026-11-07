@@ -133,18 +133,17 @@ textarea {
 }
 
 .session-item {
+  position: relative;
   width: 100%;
-  text-align: left;
   border: 1px solid transparent;
   background: transparent;
   border-radius: 10px;
-  padding: 0.7rem 0.75rem;
-  cursor: pointer;
   color: inherit;
-  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
+  transition: background 0.18s ease, border-color 0.18s ease;
 }
 
-.session-item:hover {
+.session-item:hover,
+.session-item:focus-within {
   background: rgba(255, 255, 255, 0.7);
   border-color: var(--line);
 }
@@ -153,6 +152,18 @@ textarea {
   background: var(--panel-solid);
   border-color: rgba(15, 118, 110, 0.28);
   box-shadow: 0 6px 16px rgba(20, 33, 43, 0.05);
+}
+
+.session-item-main {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 0.7rem 2.6rem 0.7rem 0.75rem;
+  cursor: pointer;
+  color: inherit;
+  border-radius: 10px;
 }
 
 .session-item .t {
@@ -172,6 +183,64 @@ textarea {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+}
+
+.session-item-actions {
+  position: absolute;
+  top: 50%;
+  right: 0.4rem;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.session-item:hover .session-item-actions,
+.session-item:focus-within .session-item-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.session-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-solid, #fff);
+  color: var(--muted);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(20, 33, 43, 0.06);
+}
+
+.session-act:hover {
+  color: var(--ink, #14212b);
+  border-color: rgba(15, 118, 110, 0.35);
+}
+
+.session-act-delete:hover {
+  color: #b42318;
+  border-color: rgba(180, 35, 24, 0.35);
+}
+
+.session-act-r {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.95rem;
+  height: 0.95rem;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+  font-family: "Noto Sans SC", system-ui, sans-serif;
 }
 
 .session-empty {
